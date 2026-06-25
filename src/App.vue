@@ -14,6 +14,8 @@
         <button class="update-dismiss" @click="updateInfo = null">✕</button>
       </div>
     </div>
+    <!-- 已是最新版本 toast -->
+    <div v-if="upToDateToast" class="update-toast" @click.stop>已是最新版本</div>
     <img class="pet-character" :class="petState" :src="petAppearance" />
 
     <!-- 右鍵選單遮罩 -->
@@ -75,6 +77,8 @@
       </div>
       <div class="context-menu-divider"></div>
       <div class="context-menu-item" @click="openSettings">設定</div>
+      <div class="context-menu-divider"></div>
+      <div class="context-menu-version">v{{ appVersion }}</div>
     </div>
 
     <!-- 設定 Dialog -->
@@ -114,6 +118,7 @@
 import { ref, computed, onMounted, nextTick } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import zeztzIdleImg from "./assets/imgs/Zeztz/zeztz-idle.png";
 import zeztzNotifiedImg from "./assets/imgs/Zeztz/zeztz-notified.png";
@@ -134,6 +139,14 @@ interface UpdateInfo {
 
 const updateInfo = ref<UpdateInfo | null>(null);
 const updating = ref(false);
+const upToDateToast = ref(false);
+let upToDateTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showUpToDateToast() {
+  if (upToDateTimer) clearTimeout(upToDateTimer);
+  upToDateToast.value = true;
+  upToDateTimer = setTimeout(() => { upToDateToast.value = false; }, 3000);
+}
 
 const petState = ref<"idle" | "notified">("idle");
 const message = ref("");
@@ -142,6 +155,7 @@ const autostartEnabled = ref(false);
 const hooksStatus = ref<"" | "loading" | "ok" | "error" | "cancelled">("");
 const contextMenu = ref({ visible: false, x: 0, y: 0 });
 const contextMenuEl = ref<HTMLElement | null>(null);
+const appVersion = ref("");
 const selectedCharacter = ref<Character>(
   (localStorage.getItem("selectedCharacter") as Character) ?? "zeztz",
 );
@@ -231,6 +245,8 @@ async function doInstallUpdate() {
 }
 
 onMounted(async () => {
+  appVersion.value = await getVersion();
+
   await listen("claude-event", (event) => {
     console.log("收到 Claude 通知:", event.payload);
     petState.value = "notified";
@@ -244,6 +260,14 @@ onMounted(async () => {
 
   await listen<UpdateInfo>("update-available", (event) => {
     updateInfo.value = event.payload;
+  });
+
+  await listen<{ manual: boolean }>("update-not-available", (event) => {
+    if (event.payload.manual) showUpToDateToast();
+  });
+
+  await listen("update-error", () => {
+    showUpToDateToast();
   });
 });
 </script>
@@ -316,6 +340,13 @@ onMounted(async () => {
   height: 1px;
   background: #e8e8e8;
   margin: 2px 0;
+}
+
+.context-menu-version {
+  padding: 5px 16px;
+  font-size: 11px;
+  color: #aaa;
+  user-select: none;
 }
 
 /* 設定 Dialog */
@@ -468,5 +499,20 @@ onMounted(async () => {
   cursor: pointer;
   font-size: 12px;
   padding: 0 2px;
+}
+
+.update-toast {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(40, 40, 40, 0.88);
+  color: #fff;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 11px;
+  z-index: 3000;
+  white-space: nowrap;
+  pointer-events: none;
 }
 </style>

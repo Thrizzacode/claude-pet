@@ -141,7 +141,7 @@ fn toggle_window_visibility(app: &AppHandle) {
     }
 }
 
-fn check_update_in_background(app: AppHandle) {
+fn check_update_in_background(app: AppHandle, manual: bool) {
     tauri::async_runtime::spawn(async move {
         use tauri_plugin_updater::UpdaterExt;
         if let Ok(updater) = app.updater() {
@@ -158,10 +158,13 @@ fn check_update_in_background(app: AppHandle) {
                     .ok();
                 }
                 Ok(None) => {
-                    app.emit("update-not-available", ()).ok();
+                    app.emit("update-not-available", serde_json::json!({ "manual": manual })).ok();
                 }
                 Err(e) => {
                     println!("檢查更新失敗: {}", e);
+                    if manual {
+                        app.emit("update-error", serde_json::json!({ "error": e.to_string() })).ok();
+                    }
                 }
             }
         }
@@ -219,7 +222,7 @@ async fn main() {
                         toggle_window_visibility(app);
                     }
                     "check_update" => {
-                        check_update_in_background(app.clone());
+                        check_update_in_background(app.clone(), true);
                     }
                     "quit" => {
                         app.exit(0);
@@ -248,7 +251,7 @@ async fn main() {
             let app_handle_update = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                check_update_in_background(app_handle_update);
+                check_update_in_background(app_handle_update, false);
             });
 
             Ok(())
