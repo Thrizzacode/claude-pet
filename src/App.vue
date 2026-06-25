@@ -1,0 +1,391 @@
+<template>
+  <div
+    class="pet-container"
+    data-tauri-drag-region
+    @contextmenu.prevent="showContextMenu"
+  >
+    <img class="pet-character" :class="petState" :src="petAppearance" />
+
+    <!-- 右鍵選單遮罩 -->
+    <div
+      v-if="contextMenu.visible"
+      class="context-menu-backdrop"
+      @click="hideContextMenu"
+      @contextmenu.prevent="hideContextMenu"
+    ></div>
+
+    <!-- 右鍵選單 -->
+    <div
+      v-if="contextMenu.visible"
+      ref="contextMenuEl"
+      class="context-menu"
+      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+      @click.stop
+    >
+      <div class="context-menu-item" @click="selectCharacter('zeztz')">
+        <span>Zeztz</span>
+        <span
+          class="context-menu-check"
+          :style="{
+            visibility: selectedCharacter === 'zeztz' ? 'visible' : 'hidden',
+          }"
+          >✓</span
+        >
+      </div>
+      <div class="context-menu-item" @click="selectCharacter('border-collie')">
+        <span>Border Collie</span>
+        <span
+          class="context-menu-check"
+          :style="{
+            visibility:
+              selectedCharacter === 'border-collie' ? 'visible' : 'hidden',
+          }"
+          >✓</span
+        >
+      </div>
+      <div class="context-menu-item" @click="selectCharacter('rider1')">
+        <span>Rider1</span>
+        <span
+          class="context-menu-check"
+          :style="{
+            visibility: selectedCharacter === 'rider1' ? 'visible' : 'hidden',
+          }"
+          >✓</span
+        >
+      </div>
+      <div class="context-menu-item" @click="selectCharacter('v3')">
+        <span>V3</span>
+        <span
+          class="context-menu-check"
+          :style="{
+            visibility: selectedCharacter === 'v3' ? 'visible' : 'hidden',
+          }"
+          >✓</span
+        >
+      </div>
+      <div class="context-menu-divider"></div>
+      <div class="context-menu-item" @click="openSettings">設定</div>
+    </div>
+
+    <!-- 設定 Dialog -->
+    <div
+      v-if="settingsOpen"
+      class="dialog-overlay"
+      @click.self="settingsOpen = false"
+    >
+      <div class="dialog">
+        <div class="dialog-title">設定</div>
+        <label class="toggle-row">
+          <span>開機自動啟動</span>
+          <input
+            type="checkbox"
+            v-model="autostartEnabled"
+            @change="toggleAutostart"
+          />
+        </label>
+        <div class="hooks-section">
+          <div class="hooks-label">安裝 Claude Hooks</div>
+          <div class="hooks-buttons">
+            <button class="hooks-btn" @click="setupHooks('global')" :disabled="!!hooksStatus">全域</button>
+            <button class="hooks-btn" @click="setupHooks('project')" :disabled="!!hooksStatus">專案</button>
+          </div>
+          <span v-if="hooksStatus === 'ok'" class="hooks-ok">已安裝 ✓</span>
+          <span v-if="hooksStatus === 'error'" class="hooks-error">安裝失敗</span>
+          <span v-if="hooksStatus === 'loading'" class="hooks-loading">安裝中...</span>
+          <span v-if="hooksStatus === 'cancelled'" class="hooks-hint">已取消</span>
+        </div>
+        <button class="dialog-close" @click="settingsOpen = false">關閉</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted, nextTick } from "vue";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import zeztzIdleImg from "./assets/imgs/Zeztz/zeztz-idle.png";
+import zeztzNotifiedImg from "./assets/imgs/Zeztz/zeztz-notified.png";
+import dogIdleImg from "./assets/imgs/Border Collie/dog-idle.png";
+import dogNotifiedImg from "./assets/imgs/Border Collie/dog-notified.png";
+import rider1IdleImg from "./assets/imgs/Rider1/rider1-idle.png";
+import rider1NotifiedImg from "./assets/imgs/Rider1/rider1-notified.png";
+import v3IdleImg from "./assets/imgs/V3/v3-idle.png";
+import v3NotifiedImg from "./assets/imgs/V3/v3-notified.png";
+
+type Character = "zeztz" | "border-collie" | "rider1" | "v3";
+
+const petState = ref<"idle" | "notified">("idle");
+const message = ref("");
+const settingsOpen = ref(false);
+const autostartEnabled = ref(false);
+const hooksStatus = ref<"" | "loading" | "ok" | "error" | "cancelled">("");
+const contextMenu = ref({ visible: false, x: 0, y: 0 });
+const contextMenuEl = ref<HTMLElement | null>(null);
+const selectedCharacter = ref<Character>(
+  (localStorage.getItem("selectedCharacter") as Character) ?? "zeztz",
+);
+
+const petAppearance = computed(() => {
+  if (selectedCharacter.value === "border-collie") {
+    return petState.value === "idle" ? dogIdleImg : dogNotifiedImg;
+  }
+  if (selectedCharacter.value === "rider1") {
+    return petState.value === "idle" ? rider1IdleImg : rider1NotifiedImg;
+  }
+  if (selectedCharacter.value === "v3") {
+    return petState.value === "idle" ? v3IdleImg : v3NotifiedImg;
+  }
+  return petState.value === "idle" ? zeztzIdleImg : zeztzNotifiedImg;
+});
+
+function showContextMenu(event: MouseEvent) {
+  contextMenu.value = { visible: true, x: event.clientX, y: event.clientY };
+  nextTick(() => {
+    if (!contextMenuEl.value) return;
+    const { offsetWidth: w, offsetHeight: h } = contextMenuEl.value;
+    contextMenu.value = {
+      visible: true,
+      x: Math.min(event.clientX, window.innerWidth - w),
+      y: Math.min(event.clientY, window.innerHeight - h),
+    };
+  });
+}
+
+function hideContextMenu() {
+  contextMenu.value.visible = false;
+}
+
+function selectCharacter(char: Character) {
+  selectedCharacter.value = char;
+  localStorage.setItem("selectedCharacter", char);
+  hideContextMenu();
+}
+
+async function openSettings() {
+  hideContextMenu();
+  autostartEnabled.value = await invoke<boolean>("plugin:autostart|is_enabled");
+  hooksStatus.value = "";
+  settingsOpen.value = true;
+}
+
+async function setupHooks(scope: "global" | "project") {
+  let projectPath: string | null = null;
+
+  if (scope === "project") {
+    const selected = await openDialog({ directory: true, multiple: false, title: "選擇專案資料夾" });
+    if (!selected) {
+      hooksStatus.value = "cancelled";
+      setTimeout(() => { hooksStatus.value = ""; }, 2000);
+      return;
+    }
+    projectPath = selected as string;
+  }
+
+  hooksStatus.value = "loading";
+  try {
+    await invoke("setup_claude_hooks", { projectPath });
+    hooksStatus.value = "ok";
+    setTimeout(() => { hooksStatus.value = ""; }, 3000);
+  } catch {
+    hooksStatus.value = "error";
+    setTimeout(() => { hooksStatus.value = ""; }, 3000);
+  }
+}
+
+async function toggleAutostart() {
+  if (autostartEnabled.value) {
+    await invoke("plugin:autostart|enable");
+  } else {
+    await invoke("plugin:autostart|disable");
+  }
+}
+
+onMounted(async () => {
+  await listen("claude-event", (event) => {
+    console.log("收到 Claude 通知:", event.payload);
+    petState.value = "notified";
+    message.value = "Claude 任務完成！";
+  });
+
+  await listen("claude-start", () => {
+    petState.value = "idle";
+    message.value = "";
+  });
+});
+</script>
+
+<style scoped>
+.pet-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 20px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pet-character {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+.pet-character.notified {
+  transform: scale(1.3);
+}
+
+/* 右鍵選單 */
+.context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.context-menu {
+  position: fixed;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 100px;
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.context-menu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.context-menu-item:hover {
+  background: #f0f0f0;
+}
+
+.context-menu-check {
+  color: #333;
+  font-size: 13px;
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: #e8e8e8;
+  margin: 2px 0;
+}
+
+/* 設定 Dialog */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  /* background: rgba(0, 0, 0, 0.4); */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.dialog {
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dialog-title {
+  font-weight: bold;
+  font-size: 14px;
+  color: #333;
+}
+
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: #444;
+}
+
+.dialog-close {
+  padding: 6px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #f5f5f5;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.dialog-close:hover {
+  background: #e8e8e8;
+}
+
+.hooks-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hooks-label {
+  font-size: 12px;
+  color: #555;
+}
+
+.hooks-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.hooks-btn {
+  flex: 1;
+  padding: 5px 0;
+  border: 1px solid #aaa;
+  border-radius: 6px;
+  background: #f0f0f0;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.hooks-btn:hover:not(:disabled) {
+  background: #e0e0e0;
+}
+
+.hooks-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.hooks-ok {
+  font-size: 12px;
+  color: #4caf50;
+}
+
+.hooks-error {
+  font-size: 12px;
+  color: #f44336;
+}
+
+.hooks-loading {
+  font-size: 12px;
+  color: #888;
+}
+
+.hooks-hint {
+  font-size: 12px;
+  color: #999;
+}
+</style>
