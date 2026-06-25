@@ -8,11 +8,11 @@
 /release [patch|minor|major|X.Y.Z]
 ```
 
-- `patch`：遞增修訂版號（例：0.2.0 → 0.2.1）
-- `minor`：遞增次版本號（例：0.2.0 → 0.3.0）
-- `major`：遞增主版本號（例：0.2.0 → 1.0.0）
+- 無參數：自動分析上次 tag 後的 commits，判斷 patch / minor / major
+- `patch`：強制遞增修訂版號（例：0.2.1 → 0.2.2）
+- `minor`：強制遞增次版本號（例：0.2.1 → 0.3.0）
+- `major`：強制遞增主版本號（例：0.2.1 → 1.0.0）
 - `X.Y.Z`：直接指定版本號
-- 若無參數，預設為 `patch`
 
 ## 執行步驟
 
@@ -26,13 +26,22 @@
 
 ### 步驟 3：計算新版本號
 
-依據 `$ARGUMENTS`：
-- 空白或 `patch`：patch +1，例 `0.2.0` → `0.2.1`
-- `minor`：minor +1，patch 歸零，例 `0.2.0` → `0.3.0`
-- `major`：major +1，minor/patch 歸零，例 `0.2.0` → `1.0.0`
+若 `$ARGUMENTS` 有值，直接套用：
+- `patch`：patch +1
+- `minor`：minor +1，patch 歸零
+- `major`：major +1，minor/patch 歸零
 - `X.Y.Z` 格式：直接使用
 
-向使用者確認：「即將從 {舊版本} 發布 v{新版本}，確認繼續？」
+若 `$ARGUMENTS` **為空**，自動分析 commits 判斷：
+
+1. 執行 `git log {上次tag}..HEAD --oneline` 取得自上次 tag 後的所有 commit 訊息
+2. 依 Conventional Commits 規則判斷：
+   - 任一 commit 含 `BREAKING CHANGE` 或 `!`（如 `feat!:`）→ **major**
+   - 任一 commit 以 `feat:` 或 `feat(` 開頭 → **minor**
+   - 其餘（`fix:`、`chore:`、`refactor:` 等）→ **patch**
+3. 顯示判斷依據，例如：「根據 3 個 commits 分析，判斷為 minor（含新功能）」
+
+向使用者確認：「即將從 {舊版本} 發布 v{新版本}（{判斷依據}），確認繼續？」
 
 ### 步驟 4：同步更新三個版本號
 
