@@ -4,6 +4,16 @@
     data-tauri-drag-region
     @contextmenu.prevent="showContextMenu"
   >
+    <!-- 更新通知 banner -->
+    <div v-if="updateInfo" class="update-banner" @click.stop>
+      <span>新版本 {{ updateInfo.version }} 可更新</span>
+      <div class="update-actions">
+        <button class="update-btn" @click="doInstallUpdate" :disabled="updating">
+          {{ updating ? "安裝中..." : "立即更新" }}
+        </button>
+        <button class="update-dismiss" @click="updateInfo = null">✕</button>
+      </div>
+    </div>
     <img class="pet-character" :class="petState" :src="petAppearance" />
 
     <!-- 右鍵選單遮罩 -->
@@ -116,6 +126,15 @@ import v3NotifiedImg from "./assets/imgs/V3/v3-notified.png";
 
 type Character = "zeztz" | "border-collie" | "rider1" | "v3";
 
+interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  body?: string;
+}
+
+const updateInfo = ref<UpdateInfo | null>(null);
+const updating = ref(false);
+
 const petState = ref<"idle" | "notified">("idle");
 const message = ref("");
 const settingsOpen = ref(false);
@@ -202,6 +221,15 @@ async function toggleAutostart() {
   }
 }
 
+async function doInstallUpdate() {
+  updating.value = true;
+  try {
+    await invoke("install_update");
+  } catch {
+    updating.value = false;
+  }
+}
+
 onMounted(async () => {
   await listen("claude-event", (event) => {
     console.log("收到 Claude 通知:", event.payload);
@@ -212,6 +240,10 @@ onMounted(async () => {
   await listen("claude-start", () => {
     petState.value = "idle";
     message.value = "";
+  });
+
+  await listen<UpdateInfo>("update-available", (event) => {
+    updateInfo.value = event.payload;
   });
 });
 </script>
@@ -387,5 +419,54 @@ onMounted(async () => {
 .hooks-hint {
   font-size: 12px;
   color: #999;
+}
+
+/* 更新通知 banner */
+.update-banner {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  background: rgba(30, 100, 200, 0.92);
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 3000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.update-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.update-btn {
+  background: #fff;
+  color: #1e64c8;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.update-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.update-dismiss {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
 }
 </style>

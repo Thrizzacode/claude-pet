@@ -105,14 +105,25 @@ fn setup_claude_hooks(project_path: Option<String>) -> Result<(), String> {
     Ok(())
 }
 
-// 接收 HTTP Hook 並轉發給前端的處理函式
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    if let Some(update) = updater.check().await.map_err(|e| e.to_string())? {
+        update
+            .download_and_install(|_, _| {}, || {})
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 async fn handle_notify(State(app): State<AppHandle>, Json(payload): Json<Value>) {
     app.emit("claude-event", payload).unwrap_or_else(|e| {
         println!("發送事件失敗: {}", e);
     });
 }
 
-// 接收「開始對話」通知，重置寵物狀態
 async fn handle_start(State(app): State<AppHandle>) {
     app.emit("claude-start", ()).unwrap_or_else(|e| {
         println!("發送 claude-start 事件失敗: {}", e);
@@ -130,12 +141,40 @@ fn toggle_window_visibility(app: &AppHandle) {
     }
 }
 
+fn check_update_in_background(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        use tauri_plugin_updater::UpdaterExt;
+        if let Ok(updater) = app.updater() {
+            match updater.check().await {
+                Ok(Some(update)) => {
+                    app.emit(
+                        "update-available",
+                        serde_json::json!({
+                            "version": update.version,
+                            "currentVersion": update.current_version,
+                            "body": update.body
+                        }),
+                    )
+                    .ok();
+                }
+                Ok(None) => {
+                    app.emit("update-not-available", ()).ok();
+                }
+                Err(e) => {
+                    println!("檢查更新失敗: {}", e);
+                }
+            }
+        }
+    });
+}
+
 #[tokio::main]
 async fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![setup_claude_hooks])
+        .invoke_handler(tauri::generate_handler![setup_claude_hooks, install_update])
         .setup(|app| {
             // 將視窗定位到左下角
             if let Some(window) = app.get_webview_window("main") {
@@ -156,8 +195,10 @@ async fn main() {
 
             // 建立系統匣圖示與選單
             let toggle_item = MenuItem::with_id(app, "toggle", "隱藏寵物", true, None::<&str>)?;
+            let check_update_item =
+                MenuItem::with_id(app, "check_update", "檢查更新", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&toggle_item, &quit_item])?;
+            let menu = Menu::with_items(app, &[&toggle_item, &check_update_item, &quit_item])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -176,6 +217,9 @@ async fn main() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "toggle" => {
                         toggle_window_visibility(app);
+                    }
+                    "check_update" => {
+                        check_update_in_background(app.clone());
                     }
                     "quit" => {
                         app.exit(0);
@@ -199,6 +243,14 @@ async fn main() {
                 println!("Webhook 伺服器啟動於 http://127.0.0.1:9527");
                 axum::serve(listener, router).await.unwrap();
             });
+
+            // 啟動 3 秒後靜默檢查更新
+            let app_handle_update = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                check_update_in_background(app_handle_update);
+            });
+
             Ok(())
         })
         .run(tauri::generate_context!())
