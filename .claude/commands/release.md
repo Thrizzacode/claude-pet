@@ -58,11 +58,13 @@
 依序執行（每步確認輸出正常）：
 
 ```bash
-git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json
+git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/Cargo.lock
 git commit -m "chore: release v{新版本}"
 git tag v{新版本}
 git push --follow-tags
 ```
+
+> **注意**：`src-tauri/Cargo.lock` 必須一併提交。Cargo.lock 的 hash 是 `swatinem/rust-cache` cache key 的一部分，若版本號更新後沒同步提交 Cargo.lock，CI 每次的 cache key 都會不同，導致 rust-cache 永遠 miss，大幅增加編譯時間。
 
 ### 步驟 6：完成提示
 
