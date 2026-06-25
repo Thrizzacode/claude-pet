@@ -16,7 +16,10 @@
     </div>
     <!-- 已是最新版本 toast -->
     <div v-if="upToDateToast" class="update-toast" @click.stop>已是最新版本</div>
-    <img class="pet-character" :class="petState" :src="petAppearance" />
+    <div class="pet-wrapper">
+      <img v-if="petState === 'pending'" class="pending-badge" :src="alertImg" />
+      <img class="pet-character" :class="petState" :src="petAppearance" />
+    </div>
 
     <!-- 右鍵選單遮罩 -->
     <div
@@ -120,6 +123,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import alertImg from "./assets/imgs/alert.png";
 import zeztzIdleImg from "./assets/imgs/Zeztz/zeztz-idle.png";
 import zeztzNotifiedImg from "./assets/imgs/Zeztz/zeztz-notified.png";
 import dogIdleImg from "./assets/imgs/Border Collie/dog-idle.png";
@@ -148,7 +152,8 @@ function showUpToDateToast() {
   upToDateTimer = setTimeout(() => { upToDateToast.value = false; }, 3000);
 }
 
-const petState = ref<"idle" | "notified">("idle");
+const petState = ref<"idle" | "notified" | "pending">("idle");
+let notifiedTimer: ReturnType<typeof setTimeout> | null = null;
 const message = ref("");
 const settingsOpen = ref(false);
 const autostartEnabled = ref(false);
@@ -161,16 +166,17 @@ const selectedCharacter = ref<Character>(
 );
 
 const petAppearance = computed(() => {
+  const isNotified = petState.value === "notified";
   if (selectedCharacter.value === "border-collie") {
-    return petState.value === "idle" ? dogIdleImg : dogNotifiedImg;
+    return isNotified ? dogNotifiedImg : dogIdleImg;
   }
   if (selectedCharacter.value === "rider1") {
-    return petState.value === "idle" ? rider1IdleImg : rider1NotifiedImg;
+    return isNotified ? rider1NotifiedImg : rider1IdleImg;
   }
   if (selectedCharacter.value === "v3") {
-    return petState.value === "idle" ? v3IdleImg : v3NotifiedImg;
+    return isNotified ? v3NotifiedImg : v3IdleImg;
   }
-  return petState.value === "idle" ? zeztzIdleImg : zeztzNotifiedImg;
+  return isNotified ? zeztzNotifiedImg : zeztzIdleImg;
 });
 
 function showContextMenu(event: MouseEvent) {
@@ -249,11 +255,16 @@ onMounted(async () => {
 
   await listen("claude-event", (event) => {
     console.log("收到 Claude 通知:", event.payload);
+    if (notifiedTimer) clearTimeout(notifiedTimer);
     petState.value = "notified";
     message.value = "Claude 任務完成！";
+    notifiedTimer = setTimeout(() => {
+      petState.value = "pending";
+    }, 5000);
   });
 
   await listen("claude-start", () => {
+    if (notifiedTimer) clearTimeout(notifiedTimer);
     petState.value = "idle";
     message.value = "";
   });
@@ -285,6 +296,29 @@ onMounted(async () => {
   -webkit-user-select: none;
 }
 
+.pet-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+@keyframes badge-float {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-6px); }
+}
+
+.pending-badge {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  z-index: 10;
+  animation: badge-float 1s ease-in-out infinite;
+  pointer-events: none;
+}
+
 .pet-character {
   width: 120px;
   height: 120px;
@@ -296,6 +330,7 @@ onMounted(async () => {
 .pet-character.notified {
   transform: scale(1.3);
 }
+
 
 /* 右鍵選單 */
 .context-menu-backdrop {
