@@ -16,7 +16,7 @@
     </div>
     <!-- 已是最新版本 toast -->
     <div v-if="upToDateToast" class="update-toast" @click.stop>已是最新版本</div>
-    <div class="pet-wrapper">
+    <div class="pet-wrapper" data-tauri-drag-region>
       <img v-if="petState === 'pending'" class="pending-badge" :src="alertImg" />
       <img class="pet-character" :class="petState" :src="petAppearance" />
     </div>
